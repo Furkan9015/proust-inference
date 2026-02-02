@@ -1,0 +1,42 @@
+[project]
+name = "proust-inference"
+version = "0.1.0"
+description = "Inference library for proust protein language models"
+readme = "README.md"
+license = "CC-BY-NC-SA-2.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy==2.4.1",
+    "pyyaml==6.0.3",
+    "tqdm==4.67.2",
+    "huggingface_hub>=0.20.0",
+    "scipy>=1.11.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+# FlashAttention 4 (Hopper/Blackwell GPUs) - fastest attention
+fa4 = [
+    "nvidia-cutlass-dsl==4.3.5",
+    "typing_extensions==4.15.0",
+    "apache-tvm-ffi==0.1.8.post2",
+    "torch-c-dlpack-ext==0.1.5",
+    "cuda-python==13.0.3",
+]
+# FlashAttention 2 (Ampere GPUs) - good fallback
+fa2 = [
+    "flash-attn>=2.5.0",
+    "ninja",
+    "packaging",
+]
+# Canon layer acceleration (causal depthwise conv1d)
+canon = [
+    "causal-conv1d>=1.4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["proust_inference"]
