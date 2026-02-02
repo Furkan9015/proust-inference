@@ -130,11 +130,11 @@ This scores all indel DMS assays by computing per-variant log-likelihoods with `
 
 ## Model
 
-The default checkpoint (`nappenstance/proust_v0`) is a 308M parameter GQA-S2 Transformer trained on protein sequences.
+The default checkpoint (`nappenstance/proust_v0`) is a 309M parameter GQA-S2 Transformer trained on protein sequences.
 
 - **Architecture**: GQA-S2 (Grouped Query Attention with S2 KV-sharing and VO-RoPE)
 - **Hidden dim**: 1024, 24 layers, 16 heads, 2 KV heads
 - **Head dim**: 128 (96 NoPE + 32 RoPE)
-- **Canon ACD layers**, sigmoid softcap, key offset, 5 value embeddings, post-embed norm
-- **Vocab**: 32 tokens (ESM-style: 20 standard amino acids + special tokens)
+- **Canon ACD layers**, key offset, 5 value embeddings, optional sigmoid softcap
+- **Vocab**: 32 tokens (ESM-style: 20 standard amino acids + special tokens + padding)
 - **License**: CC-BY-NC-SA-2.0
