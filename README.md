@@ -4,7 +4,7 @@ Inference library for [proust](https://huggingface.co/nappenstance/proust_v0) pr
 
 ## Setup
 
-Tested on Linux with CUDA (Blackwell GPUs). Requires Python 3.10+.
+Tested on Ubuntu 24.04 with CUDA 13.0 (B200 and B300 GPUs, sm100). Requires Python 3.12.
 
 ```bash
 # 1. Install uv (if you don't have it)
