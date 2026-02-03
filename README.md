@@ -1,6 +1,6 @@
 # proust-inference
 
-Inference library for [proust](https://huggingface.co/nappenstance/proust_v0) protein language models.
+Inference code for [proust](https://huggingface.co/nappenstance/proust_v0) protein language models.
 
 ## Setup
 
@@ -23,7 +23,7 @@ uv pip install torch==2.11.0.dev20260202 --index-url https://download.pytorch.or
 # 4. Install proust-inference with FA4 dependencies
 uv pip install -e ".[fa4]"
 
-# 5. Build FlashAttention 4 (cute backend)
+# 5. Build FlashAttention 4 (cutedsl backend, not the usual eternal FA compilation!)
 git clone https://github.com/Dao-AILab/flash-attention.git
 cd flash-attention/flash_attn/cute
 uv pip install -e . --no-build-isolation
