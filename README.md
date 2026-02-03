@@ -1,5 +1,3 @@
-# proust-inference
-
 Inference code for [proust](https://huggingface.co/nappenstance/proust_v0) protein language models.
 
 ## Setup
