@@ -130,7 +130,7 @@ This scores all indel DMS assays by computing per-variant log-likelihoods with `
 
 The default checkpoint (`nappenstance/proust_v0`) is a 309M parameter GQA-S2 Transformer trained on protein sequences. More on the naming, Proust and his driver *in Search of Lost Time* later. 
 
-- **Architecture**: GQA-S2 (Grouped Query Attention with S2 KV-sharing and VO-RoPE)
+- **Attention mechanism**: GQA-S2 (Grouped Query Attention with S2 KV-sharing and VO-RoPE)
 - **Hidden dim**: 1024, 24 layers, 16 heads, 2 KV heads
 - **Head dim**: 128 (96 NoPE + 32 RoPE)
 - **Canon ACD layers**, key offset, 5 value embeddings, optional sigmoid softcap
