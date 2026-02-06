@@ -128,6 +128,7 @@ class GQAS2Attention(nn.Module):
         key_offset=False, num_value_embeds=0, num_layers=24,
         canon_set="", canon_kernel=4, canon_bias=False,
         canon_activation=False, canon_residual=True,
+        query_dependent_gate=False,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -137,6 +138,7 @@ class GQAS2Attention(nn.Module):
         self.rope_head_dim = rope_head_dim
         self.layer_idx = layer_idx
         self.key_offset = key_offset
+        self.query_dependent_gate = query_dependent_gate
         self.head_dim = nope_head_dim + rope_head_dim
 
         assert num_heads % num_kv_heads == 0
@@ -145,7 +147,8 @@ class GQAS2Attention(nn.Module):
 
         self.q_dim = num_heads * self.head_dim
         self.kv_dim = num_kv_heads * self.head_dim
-        self.qkv_proj = nn.Linear(hidden_size, self.q_dim + self.kv_dim, bias=False)
+        self.gate_dim = num_heads if query_dependent_gate else 0
+        self.qkv_proj = nn.Linear(hidden_size, self.q_dim + self.gate_dim + self.kv_dim, bias=False)
         self.o_proj = nn.Linear(num_heads * self.head_dim, hidden_size, bias=False)
 
         self.q_norm = RMSNorm(self.head_dim)
@@ -162,7 +165,8 @@ class GQAS2Attention(nn.Module):
                 torch.tensor([value_residual_lambda_init, -value_residual_lambda_init])
             )
 
-        self.gate = nn.Parameter(torch.zeros(num_heads))
+        if not query_dependent_gate:
+            self.gate = nn.Parameter(torch.zeros(num_heads))
 
         self.use_value_embed = _should_use_value_embed(layer_idx, num_value_embeds, num_layers)
         if self.use_value_embed:
@@ -177,7 +181,7 @@ class GQAS2Attention(nn.Module):
             cfg.canon_bias = canon_bias
             cfg.canon_activation = canon_activation
             cfg.canon_residual = canon_residual
-            self.canonB = create_canon(self.q_dim + self.kv_dim, cfg)
+            self.canonB = create_canon(self.q_dim + self.gate_dim + self.kv_dim, cfg)
 
     def _apply_key_offset(self, k, cu_seqlens, is_varlen, position_ids=None):
         nope_dim = self.nope_head_dim
@@ -216,12 +220,18 @@ class GQAS2Attention(nn.Module):
         if self.canonB is not None:
             qkv = apply_canon(self.canonB, qkv, seq_idx=seq_idx)
 
+        q_end = self.q_dim
+        gate_end = q_end + self.gate_dim
         if is_varlen:
-            q = qkv[..., :self.q_dim].view(total_tokens, self.num_heads, self.head_dim)
-            kv = qkv[..., self.q_dim:].view(total_tokens, self.num_kv_heads, self.head_dim)
+            q = qkv[..., :q_end].view(total_tokens, self.num_heads, self.head_dim)
+            if self.query_dependent_gate:
+                qd_gate_logits = qkv[..., q_end:gate_end]
+            kv = qkv[..., gate_end:].view(total_tokens, self.num_kv_heads, self.head_dim)
         else:
-            q = qkv[..., :self.q_dim].view(batch_size, seq_len, self.num_heads, self.head_dim)
-            kv = qkv[..., self.q_dim:].view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
+            q = qkv[..., :q_end].view(batch_size, seq_len, self.num_heads, self.head_dim)
+            if self.query_dependent_gate:
+                qd_gate_logits = qkv[..., q_end:gate_end]
+            kv = qkv[..., gate_end:].view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
 
         k = kv
         v = kv
@@ -260,10 +270,16 @@ class GQAS2Attention(nn.Module):
         attn_out = self.rotary.inverse_rope(attn_out, cu_seqlens=cu_seqlens, max_seqlen=max_seqlen, position_ids=position_ids)
         attn_out = self.post_sdpa_norm(attn_out)
 
-        if is_varlen:
-            attn_out = (torch.sigmoid(self.gate).view(1, self.num_heads, 1) * attn_out).view(total_tokens, -1)
+        if self.query_dependent_gate:
+            if is_varlen:
+                attn_out = (torch.sigmoid(qd_gate_logits).unsqueeze(-1) * attn_out).view(total_tokens, -1)
+            else:
+                attn_out = (torch.sigmoid(qd_gate_logits).unsqueeze(-1) * attn_out).view(batch_size, seq_len, -1)
         else:
-            attn_out = (torch.sigmoid(self.gate).view(1, 1, self.num_heads, 1) * attn_out).view(batch_size, seq_len, -1)
+            if is_varlen:
+                attn_out = (torch.sigmoid(self.gate).view(1, self.num_heads, 1) * attn_out).view(total_tokens, -1)
+            else:
+                attn_out = (torch.sigmoid(self.gate).view(1, 1, self.num_heads, 1) * attn_out).view(batch_size, seq_len, -1)
 
         return self.o_proj(attn_out), v_first_out
 

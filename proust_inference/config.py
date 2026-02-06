@@ -60,6 +60,9 @@ class ModelConfig:
     canon_activation: bool = False
     canon_residual: bool = True
 
+    # Query-dependent gating (NeurIPS 2025 Gated Attention)
+    query_dependent_gate: bool = False
+
     # Post-embedding RMSNorm
     post_embed_norm: bool = False
 

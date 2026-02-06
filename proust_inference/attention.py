@@ -58,18 +58,22 @@ class GQAAttention(nn.Module):
         self.num_kv_heads = config.num_kv_heads
         self.head_dim = config.head_dim
         self.gqa_ratio = config.gqa_ratio
+        self.query_dependent_gate = getattr(config, 'query_dependent_gate', False)
 
         self.q_dim = self.num_heads * self.head_dim
         self.kv_dim = self.num_kv_heads * self.head_dim
+        self.gate_dim = self.num_heads if self.query_dependent_gate else 0
 
-        self.qkv_proj = nn.Linear(self.hidden_dim, self.q_dim + 2 * self.kv_dim, bias=False)
+        # When query_dependent_gate=True, append num_heads gate logits between Q and KV
+        self.qkv_proj = nn.Linear(self.hidden_dim, self.q_dim + self.gate_dim + 2 * self.kv_dim, bias=False)
         self.o_proj = nn.Linear(self.q_dim, self.hidden_dim, bias=False)
 
         self.q_norm = RMSNorm(self.head_dim)
         self.k_norm = RMSNorm(self.head_dim)
         self.post_sdpa_norm = RMSNorm(self.head_dim)
 
-        self.gate = nn.Parameter(torch.zeros(self.num_heads))
+        if not self.query_dependent_gate:
+            self.gate = nn.Parameter(torch.zeros(self.num_heads))
 
         if layer_idx > 0:
             self.value_lambda = nn.Parameter(
@@ -85,7 +89,7 @@ class GQAAttention(nn.Module):
 
         self.canonB = None
         if "B" in config.canon_set:
-            self.canonB = create_canon(self.q_dim + 2 * self.kv_dim, config)
+            self.canonB = create_canon(self.q_dim + self.gate_dim + 2 * self.kv_dim, config)
 
     def forward(
         self, x, v_first=None, causal=True,
@@ -103,14 +107,21 @@ class GQAAttention(nn.Module):
         if self.canonB is not None:
             qkv = apply_canon(self.canonB, qkv, seq_idx=seq_idx)
 
+        q_end = self.q_dim
+        gate_end = q_end + self.gate_dim
+        kv_start = gate_end
         if is_varlen:
-            q = qkv[..., :self.q_dim].view(total_tokens, self.num_heads, self.head_dim)
-            k = qkv[..., self.q_dim:self.q_dim + self.kv_dim].view(total_tokens, self.num_kv_heads, self.head_dim)
-            v = qkv[..., self.q_dim + self.kv_dim:].view(total_tokens, self.num_kv_heads, self.head_dim)
+            q = qkv[..., :q_end].view(total_tokens, self.num_heads, self.head_dim)
+            if self.query_dependent_gate:
+                qd_gate_logits = qkv[..., q_end:gate_end]
+            k = qkv[..., kv_start:kv_start + self.kv_dim].view(total_tokens, self.num_kv_heads, self.head_dim)
+            v = qkv[..., kv_start + self.kv_dim:].view(total_tokens, self.num_kv_heads, self.head_dim)
         else:
-            q = qkv[..., :self.q_dim].view(batch, seq, self.num_heads, self.head_dim)
-            k = qkv[..., self.q_dim:self.q_dim + self.kv_dim].view(batch, seq, self.num_kv_heads, self.head_dim)
-            v = qkv[..., self.q_dim + self.kv_dim:].view(batch, seq, self.num_kv_heads, self.head_dim)
+            q = qkv[..., :q_end].view(batch, seq, self.num_heads, self.head_dim)
+            if self.query_dependent_gate:
+                qd_gate_logits = qkv[..., q_end:gate_end]
+            k = qkv[..., kv_start:kv_start + self.kv_dim].view(batch, seq, self.num_kv_heads, self.head_dim)
+            v = qkv[..., kv_start + self.kv_dim:].view(batch, seq, self.num_kv_heads, self.head_dim)
 
         q = self.q_norm(q)
         k = self.k_norm(k)
@@ -137,13 +148,19 @@ class GQAAttention(nn.Module):
         if is_varlen:
             attn_out = self._attn_varlen(q, k, v, cu_seqlens, max_seqlen, causal)
             attn_out = self.post_sdpa_norm(attn_out)
-            gate = torch.sigmoid(self.gate).view(1, self.num_heads, 1)
-            attn_out = (gate * attn_out).reshape(total_tokens, self.q_dim)
+            if self.query_dependent_gate:
+                attn_out = torch.sigmoid(qd_gate_logits).unsqueeze(-1) * attn_out
+            else:
+                attn_out = torch.sigmoid(self.gate).view(1, self.num_heads, 1) * attn_out
+            attn_out = attn_out.reshape(total_tokens, self.q_dim)
         else:
             attn_out = self._attn(q, k, v, causal)
             attn_out = self.post_sdpa_norm(attn_out)
-            gate = torch.sigmoid(self.gate).view(1, 1, self.num_heads, 1)
-            attn_out = (gate * attn_out).reshape(batch, seq, self.q_dim)
+            if self.query_dependent_gate:
+                attn_out = torch.sigmoid(qd_gate_logits).unsqueeze(-1) * attn_out
+            else:
+                attn_out = torch.sigmoid(self.gate).view(1, 1, self.num_heads, 1) * attn_out
+            attn_out = attn_out.reshape(batch, seq, self.q_dim)
 
         return self.o_proj(attn_out), v_first_out
 

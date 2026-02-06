@@ -61,6 +61,7 @@ class GQAS2TransformerBlock(nn.Module):
             canon_set=config.canon_set, canon_kernel=config.canon_kernel,
             canon_bias=config.canon_bias, canon_activation=config.canon_activation,
             canon_residual=config.canon_residual,
+            query_dependent_gate=getattr(config, 'query_dependent_gate', False),
         )
         self.ffn = ReluSquaredFFN(config)
         self.attn_pre_norm = RMSNorm(config.hidden_dim)
@@ -249,6 +250,32 @@ class GQATransformer(nn.Module):
         for key in missing:
             if "norm" in key and key.endswith(".weight"):
                 state_dict[key] = torch.ones(model_state[key].shape)
+
+        # Handle qkv_proj shape migration for query_dependent_gate
+        # Old: qkv_proj.weight is (q_dim + kv_dim, hidden) or (q_dim + 2*kv_dim, hidden)
+        # New: qkv_proj.weight is (q_dim + num_heads + kv_dim, hidden) etc.
+        # Pad the old weights with zeros for the gate dimensions
+        if getattr(self.config, 'query_dependent_gate', False):
+            num_heads = self.config.num_heads
+            gate_dim = num_heads
+            for key in list(state_dict.keys()):
+                if not key.endswith("attn.qkv_proj.weight"):
+                    continue
+                if key not in model_state:
+                    continue
+                ckpt_w = state_dict[key]
+                model_w = model_state[key]
+                if ckpt_w.shape[0] < model_w.shape[0] and ckpt_w.shape[1] == model_w.shape[1]:
+                    kv_size = model_w.shape[0] - ckpt_w.shape[0]
+                    if kv_size == gate_dim:
+                        if self.config.attention_type == "gqa_s2":
+                            q_dim = self.config.num_heads * self.config.gqa_s2_head_dim
+                        else:
+                            q_dim = self.config.num_heads * self.config.head_dim
+                        old_q_part = ckpt_w[:q_dim]
+                        old_kv_part = ckpt_w[q_dim:]
+                        gate_zeros = torch.zeros(gate_dim, ckpt_w.shape[1], dtype=ckpt_w.dtype, device=ckpt_w.device)
+                        state_dict[key] = torch.cat([old_q_part, gate_zeros, old_kv_part], dim=0)
 
         for key in extra:
             del state_dict[key]
