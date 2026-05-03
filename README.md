@@ -135,4 +135,4 @@ The default checkpoint (`nappenstance/proust_v0`) is a 309M parameter GQA-S2 Tra
 - **Head dim**: 128 (96 NoPE + 32 RoPE)
 - **Canon ACD layers**, key offset, 5 value embeddings, optional sigmoid softcap
 - **Vocab**: 32 tokens (ESM-style: 20 standard amino acids + special tokens + padding)
-- **License**: CC-BY-NC-SA-2.0
+- **License**: [PolyForm Noncommercial 1.0.0](LICENSE) — free for research, education, and other noncommercial use. For commercial use, contact the author.

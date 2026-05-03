@@ -3,7 +3,8 @@ name = "proust-inference"
 version = "0.1.0"
 description = "Inference library for proust protein language models"
 readme = "README.md"
-license = "CC-BY-NC-SA-2.0"
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "numpy==2.4.1",
